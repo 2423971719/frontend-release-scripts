@@ -41,6 +41,7 @@ DEPLOY_TARGET=19008_udpn_testapp /path/to/deploy-docker.sh
 | `containers` | Docker 容器名；逗号串或连续多个取值 |
 | `remote_path` | 远程部署目录 |
 | `dist_path` | 远程部署包归档目录，省略时默认 `<remote_path>/dist` |
+| `restart_cmd` | 自定义重启命令，在目标机原样执行（如 `cd /dir && sudo docker compose restart`）；省略时默认 `sudo docker restart <containers>` |
 
 前置条件：目标机 SSH 密钥免密登录；`sudo` 可免密执行 `tar` / `mv` / `cp` / `rm` / `mkdir` / `docker`。
 

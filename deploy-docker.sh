@@ -27,20 +27,22 @@ set -euo pipefail
 # 每个目标一段 add_target，字段名在前、取值在后；新增环境复制一段改值即可。
 #   name         显示名称（菜单展示，也可作为 DEPLOY_TARGET 的取值）
 #   ssh_host     user@host 或 host；只写 host 时使用当前用户
-#   containers   Docker 容器名；可写逗号串，也可连续写多个取值，重启时一次 docker restart
+#   containers   Docker 容器名；可写逗号串，也可连续写多个取值
 #   remote_path  远程部署目录
 #   dist_path    远程部署包归档目录；省略时默认 <remote_path>/dist
+#   restart_cmd  自定义重启命令，在目标机原样执行（如 "cd /dir && sudo docker compose restart"）；
+#                省略时默认 sudo docker restart <containers>
 #
 # 目标记录内部用 | 拼接保存，供菜单选择与解析使用；日常只改下面的 add_target 段。
 DEPLOY_TARGETS=()
 
 add_target() {
-  local name="" ssh_host="" containers="" remote_path="" dist_path=""
+  local name="" ssh_host="" containers="" remote_path="" dist_path="" restart_cmd=""
   local list=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      name|ssh_host|remote_path|dist_path)
+      name|ssh_host|restart_cmd|remote_path|dist_path)
         [[ $# -ge 2 ]] || { printf '[ERROR] add_target 字段 %s 缺少取值\n' "$1" >&2; exit 1; }
         printf -v "$1" '%s' "$2"   # 字段名与变量同名，按名字直接赋值
         shift 2
@@ -50,7 +52,7 @@ add_target() {
         shift
         while [[ $# -gt 0 ]]; do
           case "$1" in
-            name|ssh_host|containers|remote_path|dist_path) break ;;
+            name|ssh_host|containers|remote_path|dist_path|restart_cmd) break ;;
           esac
           list+=("$1")
           shift
@@ -66,7 +68,9 @@ add_target() {
     esac
   done
 
-  DEPLOY_TARGETS+=("${name}|${ssh_host}|${containers}|${remote_path}|${dist_path:-${remote_path}/dist}")
+  # restart_cmd 放在记录最后一段：read 把余下内容整体交给最后一个变量，
+  # 命令里带 | 也不会被截断
+  DEPLOY_TARGETS+=("${name}|${ssh_host}|${containers}|${remote_path}|${dist_path:-${remote_path}/dist}|${restart_cmd}")
 }
 
 # ---- 目标：19008_udpn_testapp ----
@@ -83,7 +87,7 @@ add_target \
   containers  "19007_udpn_testapp" \
   remote_path "/root/docker-workspace/19007_udpn_testapp"
 
-# ---- 目标：cbmt-web-app-9001-5（5 个站点容器一起重启）----
+# ---- 目标：cbmt-web-app-9001-5（5 个站点容器，由 docker compose 启动）----
 add_target \
   name        "cbmt-web-app-9001-5" \
   ssh_host    "10.0.7.118" \
@@ -92,7 +96,8 @@ add_target \
               "cbmt-web-site-3-1" \
               "cbmt-web-site-4-1" \
               "cbmt-web-site-5-1" \
-  remote_path "/root/docker-workspace/cbmt-web-app-9001-5"
+  remote_path "/root/docker-workspace/cbmt-web-app-9001-5" \
+  restart_cmd "cd /root/docker-workspace/cbmt-web-app-9001-5 && sudo docker compose restart"
 
 LOCAL_PATH="dist"              # 本地构建产物目录（相对当前执行目录）
 LOCAL_DIST_NAME="dist.tar.gz"  # 本地部署包文件名
@@ -174,7 +179,7 @@ select_target() {
 # 解析目标记录并写入全局变量；字段缺失时明确报错
 parse_target() {
   local record="$1"
-  IFS='|' read -r TARGET_NAME SSH_HOST REMOTE_DOCKER_NAME REMOTE_PATH REMOTE_DIST_PATH <<<"$record"
+  IFS='|' read -r TARGET_NAME SSH_HOST REMOTE_DOCKER_NAME REMOTE_PATH REMOTE_DIST_PATH REMOTE_RESTART_CMD <<<"$record"
 
   local missing=""
   if [[ -z "$TARGET_NAME" ]]; then missing+="显示名称 "; fi
@@ -235,6 +240,7 @@ EXEC_DIR="$(pwd)"
 ZIP_FILE="${EXEC_DIR}/${LOCAL_DIST_NAME}"
 SELECTED_TARGET=""
 REMOTE_DOCKER_NAMES=()
+REMOTE_RESTART_CMD=""
 GENERATED_ARCHIVE=0
 CURSOR_HIDDEN=0
 
@@ -379,16 +385,25 @@ move_files() {
 
 # ---------- 10. 重启 Docker 容器 ----------
 restart_docker_containers() {
-  log_info "重启 Docker 容器: ${REMOTE_DOCKER_NAMES[*]} ..."
-
-  # 多个容器合并为一条 docker restart 命令，一次 SSH 往返完成
   local quoted="" name
-  for name in "${REMOTE_DOCKER_NAMES[@]}"; do
-    quoted+=" '${name}'"
-  done
 
-  if ! ssh "$SSH_HOST" "sudo docker restart${quoted}"; then
-    error_exit "Docker 容器重启失败: ${REMOTE_DOCKER_NAMES[*]}"
+  if [[ -n "$REMOTE_RESTART_CMD" ]]; then
+    # 自定义命令按目标配置，原样交给目标机 shell 执行（如 docker compose restart）
+    log_info "执行自定义重启命令: ${REMOTE_RESTART_CMD}"
+    if ! ssh "$SSH_HOST" "$REMOTE_RESTART_CMD"; then
+      error_exit "自定义重启命令执行失败: ${REMOTE_RESTART_CMD}"
+    fi
+  else
+    log_info "重启 Docker 容器: ${REMOTE_DOCKER_NAMES[*]} ..."
+
+    # 多个容器合并为一条 docker restart 命令，一次 SSH 往返完成
+    for name in "${REMOTE_DOCKER_NAMES[@]}"; do
+      quoted+=" '${name}'"
+    done
+
+    if ! ssh "$SSH_HOST" "sudo docker restart${quoted}"; then
+      error_exit "Docker 容器重启失败: ${REMOTE_DOCKER_NAMES[*]}"
+    fi
   fi
 
   log_info "等待容器启动..."
@@ -421,6 +436,11 @@ main() {
   log_info "   容器: ${REMOTE_DOCKER_NAMES[*]}"
   log_info "   目录: ${REMOTE_PATH}"
   log_info "   归档: ${REMOTE_DIST_PATH}"
+  if [[ -n "$REMOTE_RESTART_CMD" ]]; then
+    log_info "   重启: ${REMOTE_RESTART_CMD}"
+  else
+    log_info "   重启: sudo docker restart ${REMOTE_DOCKER_NAMES[*]}"
+  fi
 
   # 前置检查
   prepare_local_archive

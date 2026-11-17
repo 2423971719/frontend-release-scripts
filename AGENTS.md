@@ -27,7 +27,7 @@ frontend-release-scripts/
 1. **bash 3.2 兼容**：macOS 自带 bash 3.2，不使用关联数组（`declare -A`）、`${var,,}` 等 bash 4 特性。
 2. **凭据不入库**：口令只通过环境变量传入（`SMB_USER` / `SMB_PASS` / `ENV_SMB_*`），脚本内不设默认值、不写明文。
 3. **不切换调用方工作目录**：脚本按「构建产物所在目录」定位输入文件（`dist.tar.gz` / `dist.zip` / `dist/`）。
-4. **配置区保持声明式**：`deploy-docker.sh` 的目标用 `add_target` 逐字段声明，不要退回长串 `|` 拼接。
+4. **配置区保持声明式**：`deploy-docker.sh` 的目标用 `add_target` 逐字段声明，不要退回长串 `|` 拼接；由 docker compose 启动的站点用 `restart_cmd` 指定重启方式（如 `cd <dir> && sudo docker compose restart`），未配置时默认 `sudo docker restart <containers>`。
 5. **菜单实现重复**：两个脚本各自维护方向键菜单；修改一个时检查另一个。
 6. **远程命令防注入**：拼进远程 shell 的变量（容器名等）先做字符集校验。
 7. 本仓库无构建、无依赖安装步骤；不要引入 node/npm 之类运行时依赖。
