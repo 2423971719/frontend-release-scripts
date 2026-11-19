@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/bash
 #
 # deploy-docker.sh
 # 通过 SSH 将本地前端构建包部署到远程 Docker 容器
@@ -75,7 +75,7 @@ add_target() {
 
 # ---- 目标：19008_udpn_testapp ----
 add_target \
-  name        "19008_udpn_testapp" \
+  name        "udpn_td_testapp" \
   ssh_host    "10.0.7.118" \
   containers  "19008_udpn_testapp" \
   remote_path "/root/docker-workspace/19008_udpn_testapp"
@@ -98,6 +98,15 @@ add_target \
               "cbmt-web-site-5-1" \
   remote_path "/root/docker-workspace/cbmt-web-app-9001-5" \
   restart_cmd "cd /root/docker-workspace/cbmt-web-app-9001-5 && sudo docker compose restart"
+
+# ---- 目标：sbp_di_17024_5（2 个站点容器，由 docker compose 启动）----
+add_target \
+  name        "sbp_di_17024_5" \
+  ssh_host    "10.0.7.118" \
+  containers  "17024_sbp_di_portal" \
+              "17025_sbp_di_operations" \
+  remote_path "/root/docker-workspace/sbp_di_17024_5" \
+  restart_cmd "cd /root/docker-workspace/sbp_di_17024_5 && sudo docker compose restart"
 
 LOCAL_PATH="dist"              # 本地构建产物目录（相对当前执行目录）
 LOCAL_DIST_NAME="dist.tar.gz"  # 本地部署包文件名
