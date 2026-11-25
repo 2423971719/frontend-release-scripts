@@ -30,7 +30,9 @@ set -euo pipefail
 #   containers   Docker 容器名；可写逗号串，也可连续写多个取值
 #   remote_path  远程部署目录
 #   dist_path    远程部署包归档目录；省略时默认 <remote_path>/dist
-#   restart_cmd  自定义重启命令，在目标机原样执行（如 "cd /dir && sudo docker compose restart"）；
+#   restart_cmd  自定义重启命令，在目标机由 SSH 用户（通常非 root）原样执行；
+#                需要进 root 目录时用 "sudo sh -c 'cd /dir && docker compose restart'"，
+#                直接 cd /root/... 会因权限不足失败；
 #                省略时默认 sudo docker restart <containers>
 #
 # 目标记录内部用 | 拼接保存，供菜单选择与解析使用；日常只改下面的 add_target 段。
@@ -97,16 +99,24 @@ add_target \
               "cbmt-web-site-4-1" \
               "cbmt-web-site-5-1" \
   remote_path "/root/docker-workspace/cbmt-web-app-9001-5" \
-  restart_cmd "cd /root/docker-workspace/cbmt-web-app-9001-5 && sudo docker compose restart"
+  restart_cmd "sudo sh -c 'cd /root/docker-workspace/cbmt-web-app-9001-5 && docker compose restart'"
 
 # ---- 目标：sbp_di_17024_5（2 个站点容器，由 docker compose 启动）----
 add_target \
-  name        "sbp_di_17024_5" \
+  name        "sbp_di_17024_5_portal" \
   ssh_host    "10.0.7.118" \
   containers  "17024_sbp_di_portal" \
               "17025_sbp_di_operations" \
-  remote_path "/root/docker-workspace/sbp_di_17024_5" \
-  restart_cmd "cd /root/docker-workspace/sbp_di_17024_5 && sudo docker compose restart"
+  remote_path "/root/docker-workspace/sbp_di_17024_5/portal" \
+  restart_cmd "sudo sh -c 'cd /root/docker-workspace/sbp_di_17024_5 && docker compose restart'"
+# ---- 目标：sbp_di_17024_5（2 个站点容器，由 docker compose 启动）----
+add_target \
+  name        "sbp_di_17024_5_operations" \
+  ssh_host    "10.0.7.118" \
+  containers  "17024_sbp_di_portal" \
+              "17025_sbp_di_operations" \
+  remote_path "/root/docker-workspace/sbp_di_17024_5/operations" \
+  restart_cmd "sudo sh -c 'cd /root/docker-workspace/sbp_di_17024_5 && docker compose restart'"
 
 LOCAL_PATH="dist"              # 本地构建产物目录（相对当前执行目录）
 LOCAL_DIST_NAME="dist.tar.gz"  # 本地部署包文件名
